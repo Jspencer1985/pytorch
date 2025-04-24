@@ -313,13 +313,13 @@ class AOTInductorModelContainer {
     pending_models_available_.notify_one();
   }
 
-  bool _should_skip_update(const size_t idx) const {
+  bool _is_tensor_constant_type(const size_t idx) const {
     auto constant_type = models_[0]->constant_type(static_cast<int64_t>(idx));
     // We should skip constants
     return constant_type == ConstantType::TensorConstant;
   }
 
-  bool _could_skip_update(const size_t idx) const {
+  bool _is_buffer_type(const size_t idx) const {
     auto constant_type = models_[0]->constant_type(static_cast<int64_t>(idx));
     // Buffer can be optionally skipped, so if it not provided by upstream
     // services, it is OK to relax the check.
@@ -338,7 +338,7 @@ class AOTInductorModelContainer {
           std::string(models_[0]->constant_name(static_cast<int64_t>(idx)));
       auto it = constants_map.find(constant_name);
       if (it == constants_map.end()) {
-        if (_should_skip_update(idx) || _could_skip_update(idx)) {
+        if (_is_tensor_constant_type(idx) || _is_buffer_type(idx)) {
           // tracing sometimes creates tensors that are non-existent in
           // original graph. We could skip those and do a direct copy.
           std::cerr << "[WARNING] Found constant or module state buffer "
@@ -379,12 +379,13 @@ class AOTInductorModelContainer {
           std::string(models_[0]->constant_name(static_cast<int64_t>(idx)));
       auto it = constants_map.find(constant_name);
       if (it == constants_map.end() &&
-          !(_should_skip_update(idx) && use_inactive)) {
+          (!use_inactive ||
+           models_[0]->constant_from_folded(static_cast<int64_t>(idx)))) {
         continue;
       }
 
       AtenTensorHandle tensor;
-      if (_should_skip_update(idx) && use_inactive) {
+      if (it == constants_map.end()) {
         aoti_torch_clone(
             original_constants_map->find(constant_name)->second.get(), &tensor);
       } else {
@@ -427,13 +428,17 @@ class AOTInductorModelContainer {
           std::string(models_[0]->constant_name(static_cast<int64_t>(idx)));
       auto it = constants_map.find(constant_name);
       if (it == constants_map.end() &&
-          !(_should_skip_update(idx) && use_inactive)) {
+          (!use_inactive ||
+           models_[0]->constant_from_folded(static_cast<int64_t>(idx)))) {
         continue;
       }
 
       AtenTensorHandle tensor;
-      if (_should_skip_update(idx) && use_inactive) {
+      if (it == constants_map.end() && user_managed) {
         tensor = original_constants_map->find(constant_name)->second.get();
+      } else if (it == constants_map.end() && !user_managed) {
+        aoti_torch_clone(
+            original_constants_map->find(constant_name)->second.get(), &tensor);
       } else {
         tensor = it->second;
       }
