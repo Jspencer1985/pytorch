@@ -869,6 +869,13 @@ struct MPSHostAllocator final : public at::HostAllocator {
     TORCH_CHECK_NOT_IMPLEMENTED(false, "MPSHostAllocator does not support reset_peak_stats() yet.");
   }
 
+  bool is_pinned(const void* data) override {
+    if (!at::mps::is_available()) {
+      return false;
+    }
+    return at::mps::_getSharedAllocator().isSharedBuffer(data);
+  }
+
  private:
   static void Delete(void* ptr) {
     MPSAllocator::Delete(ptr);
