@@ -246,6 +246,58 @@ def compute_global_tensor_info(
     return tensor_shape, tensor_stride
 
 
+def compute_global_tensor_shape(
+    shape: torch.Size, mesh: DeviceMesh, placements: Sequence[Placement]
+) -> torch.Size:
+    """
+    Compute the global size of a DTensor from the given local tensor shape,
+    the mesh and placements.
+    NOTE: Currently this function only supports 1D mesh.
+
+    Args:
+        shape (:class:`torch.Size`):
+            Shape of the Local tensor
+        mesh (:class:`DeviceMesh`):
+            Object which describes the mesh topology
+            of devices for the DTensor.
+        placements (Sequence[:class:`Placement`]]):
+            The attribute of the DTensor that describes its layout
+            on the mesh topology.
+
+    Return:
+        tensor_shape: Shape of the glocal DTensor.
+    """
+    if mesh.ndim > 1:
+        raise NotImplementedError(
+            "compute_global_tensor_shape only supports 1D mesh for now."
+        )
+    if len(placements) != 1:
+        raise NotImplementedError(
+            "compute_global_tensor_shape only supports 1 placement for now."
+        )
+
+    if isinstance(placements[0], Replicate):
+        return shape
+    elif isinstance(placements[0], Shard):
+        local_shape = torch.tensor(list(shape))
+        gathered_shapes = [None for _ in range(torch.distributed.get_world_size())]
+        torch.distributed.all_gather_object(gathered_shapes, local_shape)
+        sharded_dim_sum = 0
+        for shape_tensor in gathered_shapes:
+            if shape_tensor is None:
+                raise RuntimeError(
+                    "Cannot find the shape of the DTensor on some ranks."
+                )
+            sharded_dim_sum += shape_tensor[placements[0].dim]
+        global_shape = list(shape)
+        global_shape[placements[0].dim] = sharded_dim_sum
+        return torch.Size(global_shape)
+    else:
+        raise NotImplementedError(
+            f"Placement type {type(placements[0])} not supported."
+        )
+
+
 def try_find_mesh_from_args(
     op_call: torch._ops.OpOverload, args: Sequence[object]
 ) -> DeviceMesh:
