@@ -52,21 +52,23 @@ static Tensor _mps_linear_new(const Tensor& input, const Tensor& weight, const s
     dispatch_sync_with_rethrow(mpsStream->queue(), ^() {
       @autoreleasepool {
         mpsStream->endKernelCoalescing();
+        id<MTLCommandBuffer> commandBuffer = mpsStream->commandBuffer();
+
         MPSDataType mpsDataType = getMPSDataType(weight.scalar_type());
 
         auto inputNDArray = getMPSNDArray(input, input.sizes(), input.strides());
         auto outNDArray = getMPSNDArray(output, output.sizes(), output.strides());
+        auto weightNDArray = getMPSNDArray(output, output.sizes(), output.strides());
 
         id<MTLBuffer> weightBuf = getMTLBufferStorage(weight);
-        MPSNDArrayDescriptor* weightTensorDesc = 
+        MPSNDArrayDescriptor* weightDesc =
             [MPSNDArrayDescriptor descriptorWithDataType:mpsDataType shape:getMPSShape(weight.sizes())];
-        weightTensorDesc.preferPackedRows = YES;
-        [weightTensorDesc transposeDimension:0 withDimension:1];
-        MPSNDArray* weightNDArray = [[MPSNDArray alloc] initWithBuffer:weightBuf
-                                                            offset:weight.storage_offset() * weight.element_size()
-                                                        descriptor:weightTensorDesc];
+        weightDesc.preferPackedRows = YES;
+        [weightDesc transposeDimension: 0 withDimension: 1];
+        auto weightNDArrayT = [weightNDArray arrayViewWithCommandBuffer: commandBuffer
+                                        descriptor: weightDesc
+                                          aliasing: MPSAliasingStrategyShallAlias];
 
-        id<MTLCommandBuffer> commandBuffer = mpsStream->commandBuffer();
         if(has_bias){
             auto biasNDArray = getMPSNDArray(bias, bias.sizes(), bias.strides());
             auto cachedKernel = LookUpOrCreateCachedKernel<MPSCachedKernel>(key, [&]() {
@@ -77,7 +79,7 @@ static Tensor _mps_linear_new(const Tensor& input, const Tensor& weight, const s
             getMPSProfiler().beginProfileKernel(kernel, "mps_linear", {input, weight, bias});
             [kernel encodeToCommandEncoder:computeEncoder
                                              commandBuffer:commandBuffer
-                                              sourceArrays:@[ inputNDArray, weightNDArray, biasNDArray]
+                                              sourceArrays:@[ inputNDArray, weightNDArrayT, biasNDArray]
                                           destinationArray:outNDArray];
             getMPSProfiler().endProfileKernel(kernel);
         } else {
@@ -88,7 +90,7 @@ static Tensor _mps_linear_new(const Tensor& input, const Tensor& weight, const s
             getMPSProfiler().beginProfileKernel(kernel, "mps_linear", {input, weight, bias});
             [kernel encodeToCommandEncoder:computeEncoder
                                              commandBuffer:commandBuffer
-                                              sourceArrays:@[ inputNDArray, weightNDArray]
+                                              sourceArrays:@[ inputNDArray, weightNDArrayT]
                                           destinationArray:outNDArray];
             getMPSProfiler().endProfileKernel(kernel);
         }
