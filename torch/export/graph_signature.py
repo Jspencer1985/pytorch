@@ -17,6 +17,7 @@ __all__ = [
     "CustomObjArgument",
     "ExportBackwardSignature",
     "ExportGraphSignature",
+    "FunctionSchemaArgument",
     "InputKind",
     "InputSpec",
     "OutputKind",
@@ -61,6 +62,12 @@ class CustomObjArgument:
 
 
 @dataclasses.dataclass
+class FunctionSchemaArgument:
+    name: str
+    schema: str
+
+
+@dataclasses.dataclass
 class ConstantArgument:
     name: str
     value: Union[int, float, bool, str, None]
@@ -74,6 +81,7 @@ ArgumentSpec = Union[
     ConstantArgument,
     CustomObjArgument,
     TokenArgument,
+    FunctionSchemaArgument,
 ]
 
 
@@ -84,6 +92,7 @@ class InputKind(Enum):
     CONSTANT_TENSOR = auto()
     CUSTOM_OBJ = auto()
     TOKEN = auto()
+    FUNCTION_SCHEMA = auto()
 
 
 @dataclasses.dataclass
@@ -108,6 +117,7 @@ class InputSpec:
                 ConstantArgument,
                 CustomObjArgument,
                 TokenArgument,
+                FunctionSchemaArgument,
             ),
         ), f"got {type(self.arg)}"
 
@@ -280,6 +290,15 @@ class ExportGraphSignature:
             s.target
             for s in self.input_specs
             if s.kind == InputKind.CUSTOM_OBJ
+            if isinstance(s.target, str)
+        )
+
+    @property
+    def lifted_function_schemas(self) -> Collection[str]:
+        return tuple(
+            s.target
+            for s in self.input_specs
+            if s.kind == InputKind.FUNCTION_SCHEMA
             if isinstance(s.target, str)
         )
 
