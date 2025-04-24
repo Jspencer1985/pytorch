@@ -48,7 +48,7 @@ static Tensor _mps_linear_new(const Tensor& input, const Tensor& weight, const s
     id<MTLComputeCommandEncoder> computeEncoder = mpsStream->commandEncoder();
 
 
-    const string key = "mps_linear" + getTensorsStringKey({input, weight, bias}, true);
+    const string key = "mps_linear" + getTensorsStringKey({input, weight, bias}, true, true);
     dispatch_sync_with_rethrow(mpsStream->queue(), ^() {
       @autoreleasepool {
         mpsStream->endKernelCoalescing();
